@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hivameet
+      POSTGRES_PASSWORD: hivameet
+      POSTGRES_DB: hivameet
+    ports:
+      - "5433:5432"
+    volumes:
+      - hivameet_db_data:/var/lib/postgresql/data
+
+volumes:
+  hivameet_db_data:
