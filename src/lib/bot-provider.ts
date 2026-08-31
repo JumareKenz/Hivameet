@@ -1,15 +1,22 @@
 // Thin abstraction over the meeting-bot provider (the headless participant
 // that joins Zoom/Meet/Teams, records, and streams us transcript/webhook
-// events). Recall.ai is the default implementation because it already
-// handles bot admission, transcription hand-off, and per-platform quirks
-// across Meet/Zoom/Teams — building that ourselves is a project on its own.
-// Swap `dispatchBot` for another provider by implementing the same shape.
+// events).
+//
+// Provider: Attendee (https://github.com/attendee-labs/attendee) — open
+// source, self-hostable Django app (Docker + Postgres + Redis). Run it as
+// its own service (see README) and point ATTENDEE_BASE_URL at it; Hivameet
+// only talks to its REST API, same as it would talk to a hosted vendor.
+// API reference verified against the project's README/source as of writing:
+// POST {base}/api/v1/bots to join, X-Webhook-Signature (HMAC-SHA256, base64
+// secret) on inbound webhooks. Swap this file for another provider by
+// implementing the same shape.
 
 export class BotProviderNotConfiguredError extends Error {
   constructor() {
     super(
-      "No meeting-bot provider is configured. Set RECALL_API_KEY in .env.local " +
-        "(see https://www.recall.ai) to let the bot actually join calls."
+      "No meeting-bot provider is configured. Set ATTENDEE_BASE_URL and " +
+        "ATTENDEE_API_KEY in .env.local to let the bot actually join calls " +
+        "(see README for self-hosting Attendee)."
     );
     this.name = "BotProviderNotConfiguredError";
   }
@@ -37,12 +44,13 @@ export async function dispatchBot({
   botDisplayName,
   webhookUrl,
 }: DispatchBotParams): Promise<DispatchBotResult> {
-  const apiKey = process.env.RECALL_API_KEY;
-  if (!apiKey) {
+  const baseUrl = process.env.ATTENDEE_BASE_URL;
+  const apiKey = process.env.ATTENDEE_API_KEY;
+  if (!baseUrl || !apiKey) {
     throw new BotProviderNotConfiguredError();
   }
 
-  const res = await fetch("https://us-east-1.recall.ai/api/v1/bot/", {
+  const res = await fetch(`${baseUrl}/api/v1/bots`, {
     method: "POST",
     headers: {
       Authorization: `Token ${apiKey}`,
@@ -51,24 +59,20 @@ export async function dispatchBot({
     body: JSON.stringify({
       meeting_url: meetingUrl,
       bot_name: botDisplayName,
-      recording_config: {
-        transcript: { provider: { meeting_captions: {} } },
-        realtime_endpoints: [
-          {
-            type: "webhook",
-            url: webhookUrl,
-            events: ["transcript.data", "bot.status_change"],
-          },
-        ],
-      },
+      webhooks: [
+        {
+          url: webhookUrl,
+          triggers: ["bot.state_change", "transcript.update"],
+        },
+      ],
     }),
   });
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`Recall.ai bot dispatch failed (${res.status}): ${body}`);
+    throw new Error(`Attendee bot dispatch failed (${res.status}): ${body}`);
   }
 
-  const data = await res.json();
+  const data: { id: string } = await res.json();
   return { providerSessionId: data.id };
 }

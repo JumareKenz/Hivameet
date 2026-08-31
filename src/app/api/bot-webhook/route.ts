@@ -1,46 +1,73 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { meetings, meetingParticipants, transcriptSegments } from "@/db/schema";
 import { generateMeetingIntelligence } from "@/lib/intelligence";
 
-// Receives events from the meeting-bot provider (Recall.ai by default — see
-// src/lib/bot-provider.ts). Payload shape below matches Recall.ai's
-// `transcript.data` / `bot.status_change` webhook events; adjust field names
-// here once RECALL_API_KEY is live and you can see real payloads, since this
-// hasn't been verified against traffic yet.
-//
-// TODO before production: verify the `x-recall-signature` header against
-// RECALL_WEBHOOK_SECRET before trusting the body.
+// Receives webhook events from Attendee (github.com/attendee-labs/attendee),
+// the self-hosted bot provider — see src/lib/bot-provider.ts. Payload shapes
+// and state/event codes below come from the Attendee source
+// (bots/models.py: BotStates, BotEventTypes) and docs.attendee.dev/guides/webhooks.
+
+interface AttendeeWebhookPayload {
+  bot_id: string;
+  trigger: "bot.state_change" | "transcript.update";
+  data: Record<string, unknown>;
+}
+
+function isSignatureValid(rawBody: string, signatureHeader: string | null): boolean {
+  const secret = process.env.ATTENDEE_WEBHOOK_SECRET;
+  if (!secret) {
+    console.warn(
+      "ATTENDEE_WEBHOOK_SECRET is not set — accepting bot webhook without verifying its signature."
+    );
+    return true;
+  }
+  if (!signatureHeader) return false;
+
+  const expected = createHmac("sha256", Buffer.from(secret, "base64"))
+    .update(rawBody)
+    .digest("base64");
+
+  const expectedBuf = Buffer.from(expected);
+  const actualBuf = Buffer.from(signatureHeader);
+  return (
+    expectedBuf.length === actualBuf.length && timingSafeEqual(expectedBuf, actualBuf)
+  );
+}
 
 export async function POST(req: Request) {
-  const payload = await req.json();
-  const providerSessionId: string | undefined = payload?.data?.bot?.id ?? payload?.bot_id;
-
-  if (!providerSessionId) {
-    return NextResponse.json({ error: "Missing bot id" }, { status: 400 });
+  const rawBody = await req.text();
+  if (!isSignatureValid(rawBody, req.headers.get("x-webhook-signature"))) {
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
+  const payload: AttendeeWebhookPayload = JSON.parse(rawBody);
+
   const meeting = await db.query.meetings.findFirst({
-    where: eq(meetings.botProviderSessionId, providerSessionId),
+    where: eq(meetings.botProviderSessionId, payload.bot_id),
   });
   if (!meeting) {
     return NextResponse.json({ error: "Unknown meeting" }, { status: 404 });
   }
 
-  switch (payload.event) {
-    case "bot.status_change": {
-      const status = payload?.data?.status?.code;
-      if (status === "in_call_recording") {
+  switch (payload.trigger) {
+    case "bot.state_change": {
+      const newState = payload.data.new_state as string;
+      const eventType = payload.data.event_type as string;
+
+      if (newState === "joined_recording") {
         await db
           .update(meetings)
           .set({ status: "in_progress", startedAt: new Date() })
           .where(eq(meetings.id, meeting.id));
-      } else if (status === "call_ended" || status === "done") {
+      } else if (eventType === "meeting_ended") {
         await db
           .update(meetings)
           .set({ status: "processing", endedAt: new Date() })
           .where(eq(meetings.id, meeting.id));
+      } else if (eventType === "post_processing_completed") {
         try {
           await generateMeetingIntelligence(meeting.id);
         } catch (err) {
@@ -50,44 +77,49 @@ export async function POST(req: Request) {
             .set({ status: "failed" })
             .where(eq(meetings.id, meeting.id));
         }
+      } else if (eventType === "fatal_error" || eventType === "could_not_join_meeting") {
+        await db
+          .update(meetings)
+          .set({ status: "failed" })
+          .where(eq(meetings.id, meeting.id));
       }
       break;
     }
-    case "transcript.data": {
-      const words = payload?.data?.words ?? [];
-      const speakerLabel: string = payload?.data?.speaker ?? "Unknown speaker";
-      if (words.length === 0) break;
 
-      let participant = await db.query.meetingParticipants.findFirst({
-        where: eq(meetingParticipants.meetingId, meeting.id),
-      });
-      if (!participant || participant.speakerLabel !== speakerLabel) {
-        const existing = await db.query.meetingParticipants.findMany({
+    case "transcript.update": {
+      const speakerUuid = payload.data.speaker_uuid as string;
+      const speakerName = payload.data.speaker_name as string;
+      const timestampMs = payload.data.timestamp_ms as number;
+      const durationMs = payload.data.duration_ms as number;
+      const text = (payload.data.transcription as { transcript?: string } | null)?.transcript;
+      if (!text) break;
+
+      let participant = (
+        await db.query.meetingParticipants.findMany({
           where: eq(meetingParticipants.meetingId, meeting.id),
-        });
-        participant = existing.find((p) => p.speakerLabel === speakerLabel);
-        if (!participant) {
-          [participant] = await db
-            .insert(meetingParticipants)
-            .values({ meetingId: meeting.id, speakerLabel })
-            .returning();
-        }
+        })
+      ).find((p) => p.speakerLabel === speakerUuid);
+
+      if (!participant) {
+        [participant] = await db
+          .insert(meetingParticipants)
+          .values({
+            meetingId: meeting.id,
+            speakerLabel: speakerUuid,
+            displayName: speakerName,
+          })
+          .returning();
       }
 
-      const text = words.map((w: { text: string }) => w.text).join(" ");
       await db.insert(transcriptSegments).values({
         meetingId: meeting.id,
         participantId: participant.id,
-        startMs: Math.round((payload.data.words[0]?.start_timestamp?.relative ?? 0) * 1000),
-        endMs: Math.round(
-          (payload.data.words.at(-1)?.end_timestamp?.relative ?? 0) * 1000
-        ),
+        startMs: timestampMs,
+        endMs: timestampMs + durationMs,
         text,
       });
       break;
     }
-    default:
-      break;
   }
 
   return NextResponse.json({ ok: true });
