@@ -1,16 +1,11 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { CREDIT_PACKAGES } from "@/lib/billing/pricing";
+import { initiatePaystackCheckout, PaystackNotConfiguredError } from "@/lib/billing/paystack";
 
-// No payment gateway is wired up yet — this exists so the self-serve
-// purchase flow is real end-to-end except for the actual charge. Swap in
-// Paystack/Flutterwave (or whichever gateway is chosen) here: create the
-// transaction/checkout session with them, redirect the user, and grant
-// credits from their webhook once payment is confirmed — never grant
-// credits directly from this route based on the client's say-so.
 export async function POST(req: Request) {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user?.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -19,11 +14,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid package" }, { status: 400 });
   }
 
-  return NextResponse.json(
-    {
-      error:
-        "Payments aren't connected yet. Set up a payment gateway (e.g. Paystack) and wire it into /api/billing/checkout.",
-    },
-    { status: 424 }
-  );
+  const baseUrl = process.env.APP_BASE_URL ?? new URL(req.url).origin;
+
+  try {
+    const authorizationUrl = await initiatePaystackCheckout({
+      userId: session.user.id,
+      email: session.user.email,
+      ngn,
+      callbackUrl: `${baseUrl}/billing`,
+    });
+    return NextResponse.json({ authorizationUrl });
+  } catch (err) {
+    if (err instanceof PaystackNotConfiguredError) {
+      return NextResponse.json({ error: err.message }, { status: 424 });
+    }
+    console.error(err);
+    return NextResponse.json({ error: "Couldn't start checkout" }, { status: 502 });
+  }
 }

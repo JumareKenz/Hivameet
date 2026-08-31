@@ -150,14 +150,25 @@ from the bot webhook's `meeting_ended` event). New accounts get a free
 "Join a meeting" both refuse to dispatch the bot below a 5-minute balance
 floor.
 
-The `/billing` page and `POST /api/billing/checkout` are fully wired for the
-self-serve flow — balance, package selection, transaction history — **except
-the actual payment charge**. No payment gateway is connected yet; checkout
-currently returns a clear "not configured" error instead of silently
-pretending to charge. Wire a real gateway (Paystack is the standard choice
-for NGN) into `src/app/api/billing/checkout/route.ts`, and only grant
-credits from that gateway's payment-confirmation webhook — never directly
-from the checkout request.
+Checkout is wired to **Paystack** (`src/lib/billing/paystack.ts`), following
+the same pattern already used elsewhere on this box for the Hiva platform's
+credit ledger (`chatbot_platform`'s `payment_client.py`/`billing.py`): a
+hosted Initialize Transaction checkout, and crediting only happens from
+`POST /api/billing/webhooks/paystack` after verifying Paystack's
+`x-paystack-signature` (HMAC-SHA512) — never from the checkout request
+itself. Only the fixed `CREDIT_PACKAGES` prices can be purchased, and the
+webhook dedupes by Paystack's transaction `reference` so a retried webhook
+delivery can't double-credit.
+
+**Not yet live**: `PAYSTACK_SECRET_KEY` isn't set, so checkout currently
+returns a clear "not configured" error rather than pretending to charge.
+Get a key from the Paystack dashboard (Settings → API Keys & Webhooks),
+register `{APP_BASE_URL}/api/billing/webhooks/paystack` as a webhook there
+(the `charge.success` event), and set `PAYSTACK_SECRET_KEY` in `.env.local`.
+Deliberately did not reuse the `PAYSTACK_SECRET_KEY` already configured for
+the other Hiva products on this box (`/opt/hiva/.env`) — mixing Hivameet's
+transactions into that account without asking felt like the wrong call to
+make unilaterally; get a dedicated key or confirm sharing that one first.
 
 ## Project layout
 
@@ -174,5 +185,5 @@ from the checkout request.
 
 - Export destinations (Slack, Notion, Asana, Google Docs, Email) are stubbed in the UI
 - The Attendee webhook payload/event handling is written against its documented shape but hasn't been exercised against a live Attendee instance yet
-- Payment gateway for buying credits (see Self-serve credits above)
+- `PAYSTACK_SECRET_KEY` isn't set yet, so real credit purchases aren't live (see Self-serve credits above)
 - No real OAuth/Anthropic/Attendee credentials are configured in production yet (see Production deployment above)

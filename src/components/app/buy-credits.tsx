@@ -24,6 +24,7 @@ export function BuyCredits() {
         toast.error(data.error ?? "Couldn't start checkout");
         return;
       }
+      window.location.href = data.authorizationUrl;
     });
   }
 
