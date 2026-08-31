@@ -1,5 +1,5 @@
 import { generateText, Output } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import { getChatModel } from "@/lib/ai/model";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -78,7 +78,7 @@ export async function generateMeetingIntelligence(meetingId: string) {
     .join("\n");
 
   const { output: object } = await generateText({
-    model: anthropic("claude-sonnet-5"),
+    model: getChatModel(),
     output: Output.object({ schema: meetingIntelligenceSchema }),
     system:
       "You are Hivameet's meeting intelligence engine. Extract a concise, " +

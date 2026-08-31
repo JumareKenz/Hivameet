@@ -65,6 +65,15 @@ export async function dispatchBot({
           triggers: ["bot.state_change", "transcript.update"],
         },
       ],
+      // Google Meet/Teams bots default to native closed captions and would
+      // work without this, but explicit Whisper transcription (via Groq's
+      // OpenAI-compatible API, configured as this project's "OpenAI"
+      // credential — see README) gives more accurate transcripts than
+      // captions everywhere, and is required at all for Zoom's native SDK
+      // path, which otherwise defaults to Deepgram.
+      transcription_settings: {
+        openai: { model: process.env.ATTENDEE_OPENAI_TRANSCRIPTION_MODEL || "whisper-large-v3-turbo" },
+      },
     }),
   });
 

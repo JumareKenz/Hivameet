@@ -38,50 +38,27 @@ See `.env.example`. Notably:
 
 - `DATABASE_URL` — Postgres connection string (docker-compose default included)
 - `AUTH_SECRET` — generated automatically on first bootstrap of this repo
-- `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET`, `AUTH_MICROSOFT_ENTRA_ID_ID` / `_SECRET` — calendar OAuth, required for real auto-join
-- `ANTHROPIC_API_KEY` — powers meeting summarization, action-item extraction, and Ask AI
-- `ATTENDEE_BASE_URL` / `ATTENDEE_API_KEY` / `ATTENDEE_WEBHOOK_SECRET` — the self-hosted bot provider that actually joins calls (see below); without it, "Join a meeting" records the request but the bot won't really join
+- `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` — Google sign-in + calendar auto-join, **configured and live**; `AUTH_MICROSOFT_ENTRA_ID_ID` / `_SECRET` not set (Microsoft sign-in stays disabled until it is)
+- `ANTHROPIC_API_KEY` / `GROQ_API_KEY` — meeting summarization, action-item extraction, and Ask AI (`src/lib/ai/model.ts` prefers Anthropic, falls back to Groq). **Groq is configured and live**; add an Anthropic key later to upgrade quality with no code changes.
+- `ATTENDEE_BASE_URL` / `ATTENDEE_API_KEY` / `ATTENDEE_WEBHOOK_SECRET` — the self-hosted bot provider that actually joins calls, **configured and live** (see below)
 
-## Self-hosting the meeting bot (Attendee)
+## Self-hosting the meeting bot (Attendee) — live
 
-The bot that actually joins calls — [Attendee](https://github.com/attendee-labs/attendee) — is a
-separate service you run alongside Hivameet, not a dependency inside this repo.
-It's a Django app with its own Postgres + Redis, self-contained in one Docker
-image.
+The bot that actually joins calls — [Attendee](https://github.com/attendee-labs/attendee) — is
+running as its own Docker Compose stack at `/root/attendee` on this VPS
+(cloned fresh, not a dependency inside this repo). Real, currently working,
+not a hypothetical:
 
-```bash
-git clone https://github.com/attendee-labs/attendee.git ../attendee
-cd ../attendee
-docker compose -f dev.docker-compose.yaml build   # ~5 min
-docker compose -f dev.docker-compose.yaml run --rm attendee-app-local python init_env.py > .env
-docker compose -f dev.docker-compose.yaml up
-# in another terminal, once it's up:
-docker compose -f dev.docker-compose.yaml exec attendee-app-local python manage.py migrate
-```
+- **App**: `127.0.0.1:8010` (remapped from Attendee's default 8000, which was already taken by another Hiva service on this box) — internal only, not behind nginx/Cloudflare
+- **Storage**: a dedicated **MinIO** container (`minio` service in `dev.docker-compose.yaml`) instead of a real AWS account, using Attendee's S3 backend's `AWS_ENDPOINT_URL` override. Bucket `attendee-recordings`, ports `127.0.0.1:9010`/`9011`.
+- **Transcription**: Groq's OpenAI-compatible API, added as this project's "OpenAI" credential in Attendee's UI, with `OPENAI_BASE_URL=https://api.groq.com/openai/v1` and `OPENAI_MODEL_NAME=whisper-large-v3-turbo` set in Attendee's `.env`. Google Meet/Teams bots default to native closed captions and don't strictly need this; Zoom's native SDK path does (it otherwise defaults to Deepgram, which isn't configured). `src/lib/bot-provider.ts` requests the `openai` transcription provider explicitly on every dispatch for consistent quality across platforms.
+- **Account/API key**: created via the signup flow, one project (`proj_ALM2QPsARJRRyPE2`), one API key named "hivameet". Admin login password is in `/root/.attendee_admin_password.txt` (root-only) if you need the web UI directly — Hivameet itself only uses the API key.
+- **Webhook**: registered per-bot on every dispatch (see `webhooks` in `dispatchBot()`), pointing at `{APP_BASE_URL}/api/bot-webhook`. Attendee **requires `https://`** for webhook URLs — this only works with a real `APP_BASE_URL` (i.e. the production instance behind `meet.hiva.chat`); local `npm run dev` over plain HTTP will get a 400 from Attendee on dispatch. Verified live: a real dispatch → Attendee webhook → Hivameet round trip, signature included.
+- All `ATTENDEE_*` values are already in `.env.local`.
 
-Then, at http://localhost:8000: create an account, confirm it (the link is
-printed to the `docker compose up` logs), and generate an API key from the
-sidebar. Put that key in Hivameet's `.env.local` as `ATTENDEE_API_KEY`
-(`ATTENDEE_BASE_URL` already defaults to `http://localhost:8000`).
+**Not configured**: Zoom OAuth credentials in Attendee's own Settings UI — needed to join Zoom meetings specifically (Meet and Teams don't need this). Get them from the [Zoom Marketplace](https://marketplace.zoom.us/) and add them there, not here.
 
-Two more things need to be configured **inside Attendee's own Settings UI**,
-not Hivameet's:
-- **Zoom OAuth credentials** (client id/secret from a Zoom Marketplace app) — required to join Zoom meetings specifically
-- **A Deepgram API key** — required for transcription on all platforms
-
-Register a webhook (Settings → Webhooks in Attendee's UI, or per-bot — see
-`src/lib/bot-provider.ts`) pointing at `{APP_BASE_URL}/api/bot-webhook` with
-the `bot.state_change` and `transcript.update` triggers, and copy its secret
-into `ATTENDEE_WEBHOOK_SECRET`.
-
-Note: Attendee's default Celery-based bot launcher is fine for local dev, but
-their docs call out that bots get killed on container restart and can share
-audio devices under load — for real production use they recommend
-`LAUNCH_BOT_METHOD=kubernetes`. The webhook payload shapes in
-`src/app/api/bot-webhook/route.ts` are sourced from Attendee's own
-`bots/models.py` state/event enums as of this writing — worth a quick diff
-against their current source if events stop matching after an Attendee
-upgrade.
+Ops notes: all Attendee containers (`app`, `worker`, `scheduler`, `postgres`, `redis`, `minio`) have `restart: unless-stopped` and come back up with the Docker daemon on reboot — no separate systemd unit needed. To restart after an env change: `cd /root/attendee && docker compose -f dev.docker-compose.yaml restart attendee-app-local attendee-worker-local attendee-scheduler-local`. Attendee's own docs note the default Celery-based launcher isn't ideal at real scale (bots die on container restart, can share audio devices under load) — they recommend `LAUNCH_BOT_METHOD=kubernetes` for that; fine for now on a single VPS. The webhook payload shapes in `src/app/api/bot-webhook/route.ts` are sourced from Attendee's `bots/models.py` state/event enums as of this writing — worth a quick diff against their current source if events stop matching after an Attendee upgrade.
 
 ## Calendar auto-join
 
@@ -133,13 +110,20 @@ the rest of `hiva.chat`:
 
 To deploy a change: `npm run build && systemctl restart hivameet`.
 
-**Still needed before it's actually usable in production**: real
-`AUTH_GOOGLE_ID`/`AUTH_MICROSOFT_ENTRA_ID_ID` OAuth credentials (with
-`https://meet.hiva.chat/api/auth/callback/{google,microsoft-entra-id}`
-registered as the redirect URI), `ANTHROPIC_API_KEY`, and a running Attendee
-instance — none are configured yet, and the dev-only demo login is correctly
-disabled in production, so nobody can sign in until at least one OAuth
-provider is set.
+**Live and working end-to-end**: Google sign-in, meeting intelligence/Ask AI
+(via Groq), and real bot dispatch through Attendee — verified with an actual
+dispatch → Attendee → webhook → Hivameet round trip over the real domain.
+
+**Still missing**: Microsoft sign-in (`AUTH_MICROSOFT_ENTRA_ID_ID`/`_SECRET`
+not set), Zoom joins specifically (needs Zoom OAuth credentials in
+Attendee's own settings), and real credit purchases (`PAYSTACK_SECRET_KEY`
+not set).
+
+**Known gap**: at least one real user has already signed in with Google and
+enabled auto-join, but their calendar sync is failing — the Google Calendar
+API isn't enabled on that Google Cloud project yet. Enable it at
+https://console.developers.google.com/apis/api/calendar-json.googleapis.com/overview?project=256608480369,
+then it should start working within a few minutes with no restart needed.
 
 ## Self-serve credits
 
@@ -184,6 +168,7 @@ make unilaterally; get a dedicated key or confirm sharing that one first.
 ## Not yet wired up
 
 - Export destinations (Slack, Notion, Asana, Google Docs, Email) are stubbed in the UI
-- The Attendee webhook payload/event handling is written against its documented shape but hasn't been exercised against a live Attendee instance yet
+- Microsoft sign-in/calendar (`AUTH_MICROSOFT_ENTRA_ID_ID`/`_SECRET`)
+- Zoom joins specifically (needs Zoom OAuth credentials in Attendee's own settings — Meet/Teams work without it)
 - `PAYSTACK_SECRET_KEY` isn't set yet, so real credit purchases aren't live (see Self-serve credits above)
-- No real OAuth/Anthropic/Attendee credentials are configured in production yet (see Production deployment above)
+- The Google Calendar API isn't enabled on the signed-in user's Google Cloud project yet (see Production deployment above)

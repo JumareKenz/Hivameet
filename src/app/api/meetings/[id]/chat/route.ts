@@ -1,5 +1,5 @@
 import { streamText, convertToModelMessages, type UIMessage } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import { getChatModel } from "@/lib/ai/model";
 import { eq } from "drizzle-orm";
 import { auth } from "@/auth";
 import { db } from "@/db";
@@ -47,7 +47,7 @@ export async function POST(
     .join("\n");
 
   const result = streamText({
-    model: anthropic("claude-sonnet-5"),
+    model: getChatModel(),
     system:
       `You answer questions about the meeting "${meeting.title}" using only ` +
       `the transcript below. Cite the timestamp when it helps. If the answer ` +
