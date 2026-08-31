@@ -80,16 +80,45 @@ audio devices under load — for real production use they recommend
 against their current source if events stop matching after an Attendee
 upgrade.
 
+## Calendar auto-join
+
+`src/lib/calendar/` polls Google Calendar / Microsoft Graph once a minute for
+every user with auto-join enabled, and dispatches the bot ~1 minute before a
+meeting starts (matching the product spec). It runs in-process via
+`src/instrumentation.ts`, which starts a `setInterval` when the Next.js server
+boots — no external cron or sidecar needed for a normal self-hosted single
+instance. Set `DISABLE_CALENDAR_SYNC=true` if you'd rather drive it from an
+external scheduler hitting `POST /api/calendar/sync` instead (e.g. running
+multiple instances).
+
+How it decides what to join:
+- Pulls events in the next ~6 minutes from each connected calendar (Google needs `AUTH_GOOGLE_ID`/`_SECRET`, Microsoft needs `AUTH_MICROSOFT_ENTRA_ID_ID`/`_SECRET` — both already requested with calendar read scopes at login)
+- Extracts a Zoom/Meet/Teams link from the event's conferencing data, location, or description
+- Filters by the join rule in Settings (`everything` / `hosted_by_me` / `internal_only` / `manual_only`)
+- Dedupes on `(userId, calendarEventId)` so retried/overlapping ticks can't double-dispatch
+- Still dispatches up to 5 minutes late (in case the process was down), never earlier than ~1 minute before start
+
+Settings → Calendar connections shows whether Google/Microsoft is actually
+connected (auto-join is a no-op without one) and has a "Sync now" button
+that calls the same logic on demand for testing.
+
+**Untested**: there's no real Google/Microsoft OAuth app configured in this
+environment, so this has been verified for correctness against the Calendar
+v3 / Graph API docs and by exercising the "no calendar connected" path
+end-to-end — not against a live calendar with a meeting actually starting.
+
 ## Project layout
 
 - `src/app/(app)/` — authenticated app shell (dashboard, meeting detail, settings)
 - `src/app/api/meetings/join` — dispatches the bot to an ad-hoc meeting link
 - `src/app/api/bot-webhook` — receives bot status + live transcript events from Attendee
+- `src/app/api/calendar/sync` — manual trigger for one user's calendar sync
+- `src/lib/calendar/` — Google/Microsoft calendar polling, token refresh, and the auto-join sync job
+- `src/instrumentation.ts` — starts the in-process calendar sync scheduler on server boot
 - `src/lib/intelligence.ts` — LLM pass that turns a transcript into summary/insights/action items/reminders
 - `src/db/schema.ts` — Drizzle schema (Auth.js tables + meetings/transcripts/insights/action items/reminders)
 
 ## Not yet wired up
 
-- Calendar auto-join (Google/Outlook sync + scheduling) is scaffolded in Settings but the sync job itself isn't implemented
 - Export destinations (Slack, Notion, Asana, Google Docs, Email) are stubbed in the UI
 - The Attendee webhook payload/event handling is written against its documented shape but hasn't been exercised against a live Attendee instance yet

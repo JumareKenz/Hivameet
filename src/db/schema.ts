@@ -7,6 +7,7 @@ import {
   primaryKey,
   pgEnum,
   jsonb,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import type { AdapterAccountType } from "next-auth/adapters";
@@ -112,27 +113,36 @@ export const joinRules = pgTable("join_rules", {
 
 // --- Meetings ------------------------------------------------------------
 
-export const meetings = pgTable("meetings", {
-  id: text("id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  title: text("title").notNull(),
-  platform: meetingPlatformEnum("platform").notNull().default("unknown"),
-  meetingUrl: text("meeting_url"),
-  calendarEventId: text("calendar_event_id"),
-  botProviderSessionId: text("bot_provider_session_id"),
-  status: meetingStatusEnum("status").notNull().default("scheduled"),
-  startedAt: timestamp("started_at"),
-  endedAt: timestamp("ended_at"),
-  durationSeconds: integer("duration_seconds"),
-  participantCount: integer("participant_count"),
-  audioUrl: text("audio_url"),
-  executiveSummary: text("executive_summary"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export const meetings = pgTable(
+  "meetings",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    platform: meetingPlatformEnum("platform").notNull().default("unknown"),
+    meetingUrl: text("meeting_url"),
+    calendarEventId: text("calendar_event_id"),
+    botProviderSessionId: text("bot_provider_session_id"),
+    status: meetingStatusEnum("status").notNull().default("scheduled"),
+    startedAt: timestamp("started_at"),
+    endedAt: timestamp("ended_at"),
+    durationSeconds: integer("duration_seconds"),
+    participantCount: integer("participant_count"),
+    audioUrl: text("audio_url"),
+    executiveSummary: text("executive_summary"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    // Prevents the calendar sync job from double-dispatching a bot for the
+    // same calendar event on overlapping/retried ticks. NULLs (ad-hoc
+    // meetings with no calendar event) are not deduped by Postgres.
+    uniqueIndex("meetings_user_calendar_event_idx").on(table.userId, table.calendarEventId),
+  ]
+);
 
 export const meetingParticipants = pgTable("meeting_participants", {
   id: text("id")

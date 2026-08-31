@@ -1,12 +1,13 @@
 import { auth } from "@/auth";
 import { getJoinRules } from "@/lib/data";
 import { db } from "@/db";
-import { joinRules, users } from "@/db/schema";
+import { accounts, joinRules, users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -15,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { SyncCalendarButton } from "@/components/app/sync-calendar-button";
 
 const joinModeOptions = [
   { value: "everything", label: "Join everything", description: "Every meeting on my calendar" },
@@ -26,10 +28,14 @@ const joinModeOptions = [
 export default async function SettingsPage() {
   const session = await auth();
   const userId = session!.user.id;
-  const [rules, user] = await Promise.all([
+  const [rules, user, connectedAccounts] = await Promise.all([
     getJoinRules(userId),
     db.query.users.findFirst({ where: eq(users.id, userId) }),
+    db.query.accounts.findMany({ where: eq(accounts.userId, userId) }),
   ]);
+  const connectedProviders = new Set(connectedAccounts.map((a) => a.provider));
+  const hasCalendarConnection =
+    connectedProviders.has("google") || connectedProviders.has("microsoft-entra-id");
 
   async function updateJoinRules(formData: FormData) {
     "use server";
@@ -59,7 +65,36 @@ export default async function SettingsPage() {
         </p>
       </header>
 
-      <form action={updateJoinRules} className="flex flex-col gap-6 px-6 py-6 max-w-xl">
+      <div className="flex flex-col gap-6 px-6 py-6 max-w-xl">
+        <Card>
+          <CardHeader>
+            <CardTitle>Calendar connections</CardTitle>
+            <CardDescription>
+              Auto-join scans these calendars every minute for meetings that are about to start.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={connectedProviders.has("google") ? "default" : "secondary"}>
+                Google {connectedProviders.has("google") ? "connected" : "not connected"}
+              </Badge>
+              <Badge variant={connectedProviders.has("microsoft-entra-id") ? "default" : "secondary"}>
+                Microsoft {connectedProviders.has("microsoft-entra-id") ? "connected" : "not connected"}
+              </Badge>
+            </div>
+            {!hasCalendarConnection && (
+              <p className="text-sm text-muted-foreground">
+                Sign out and back in with Google or Microsoft to connect a calendar — auto-join
+                won&apos;t do anything until then.
+              </p>
+            )}
+            <div>
+              <SyncCalendarButton />
+            </div>
+          </CardContent>
+        </Card>
+
+        <form action={updateJoinRules} className="flex flex-col gap-6">
         <Card>
           <CardHeader>
             <CardTitle>Bot identity</CardTitle>
@@ -121,7 +156,8 @@ export default async function SettingsPage() {
         <Button type="submit" className="self-start">
           Save changes
         </Button>
-      </form>
+        </form>
+      </div>
     </div>
   );
 }
