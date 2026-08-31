@@ -9,10 +9,11 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 export function AskAiPanel({ meetingId }: { meetingId: string }) {
-  const { messages, sendMessage, status } = useChat({
+  const { messages, sendMessage, status, error } = useChat({
     transport: new DefaultChatTransport({ api: `/api/meetings/${meetingId}/chat` }),
   });
   const [input, setInput] = useState("");
+  const busy = status === "submitted" || status === "streaming";
 
   return (
     <div className="flex flex-col border-t">
@@ -35,6 +36,11 @@ export function AskAiPanel({ meetingId }: { meetingId: string }) {
           </div>
         </ScrollArea>
       )}
+      {error && (
+        <p className="px-4 pb-1 text-xs text-destructive">
+          Couldn&apos;t get a response — check that ANTHROPIC_API_KEY is configured.
+        </p>
+      )}
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -48,9 +54,9 @@ export function AskAiPanel({ meetingId }: { meetingId: string }) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Ask anything about decisions or notes..."
-          disabled={status !== "ready"}
+          disabled={busy}
         />
-        <Button type="submit" size="icon" disabled={status !== "ready" || !input.trim()}>
+        <Button type="submit" size="icon" disabled={busy || !input.trim()}>
           <Send className="h-4 w-4" />
         </Button>
       </form>

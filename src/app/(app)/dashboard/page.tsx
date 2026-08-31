@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { format } from "date-fns";
 import { auth } from "@/auth";
 import { getMeetingsForUser } from "@/lib/data";
@@ -19,7 +20,8 @@ const statusVariant: Record<string, { label: string; className: string }> = {
 
 export default async function DashboardPage() {
   const session = await auth();
-  const meetingList = await getMeetingsForUser(session!.user.id);
+  if (!session?.user) redirect("/login");
+  const meetingList = await getMeetingsForUser(session.user.id);
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">

@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getJoinRules } from "@/lib/data";
 import { db } from "@/db";
@@ -27,7 +28,8 @@ const joinModeOptions = [
 
 export default async function SettingsPage() {
   const session = await auth();
-  const userId = session!.user.id;
+  if (!session?.user) redirect("/login");
+  const userId = session.user.id;
   const [rules, user, connectedAccounts] = await Promise.all([
     getJoinRules(userId),
     db.query.users.findFirst({ where: eq(users.id, userId) }),

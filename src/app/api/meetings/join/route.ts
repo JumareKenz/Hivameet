@@ -44,9 +44,12 @@ export async function POST(req: Request) {
       .set({ botProviderSessionId: providerSessionId })
       .where(eq(meetings.id, meeting.id));
   } catch (err) {
+    // Keep the meeting record so the failed attempt stays visible on the
+    // dashboard instead of vanishing, but don't leave it stuck showing
+    // "awaiting admission" forever when no bot was actually dispatched.
+    await db.update(meetings).set({ status: "failed" }).where(eq(meetings.id, meeting.id));
+
     if (err instanceof BotProviderNotConfiguredError) {
-      // Keep the meeting record so the flow/UI is visible end-to-end, but
-      // surface the missing credential clearly instead of failing silently.
       return NextResponse.json(
         { error: err.message, meetingId: meeting.id },
         { status: 424 }

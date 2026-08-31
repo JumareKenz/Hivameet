@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { format } from "date-fns";
 import { auth } from "@/auth";
 import { getMeetingDetail } from "@/lib/data";
@@ -17,7 +17,8 @@ export default async function MeetingDetailPage({
 }) {
   const { id } = await params;
   const session = await auth();
-  const detail = await getMeetingDetail(session!.user.id, id);
+  if (!session?.user) redirect("/login");
+  const detail = await getMeetingDetail(session.user.id, id);
   if (!detail) notFound();
 
   const { meeting, segments, keyInsights, recommendations, actionItems, reminders } = detail;
