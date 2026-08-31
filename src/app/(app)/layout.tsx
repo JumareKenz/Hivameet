@@ -1,12 +1,19 @@
+import Image from "next/image";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/auth";
 import { SidebarNav } from "@/components/app/sidebar-nav";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { getBalanceKobo } from "@/lib/billing/credits";
+import { formatNgn } from "@/lib/billing/pricing";
+import { Wallet, LogOut } from "lucide-react";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
+
+  const balanceKobo = await getBalanceKobo(session.user.id);
 
   const initials = (session.user.name ?? session.user.email ?? "?")
     .split(" ")
@@ -17,22 +24,45 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex flex-1">
-      <aside className="hidden w-56 shrink-0 border-r bg-card sm:flex sm:flex-col">
-        <div className="flex items-center gap-2 px-4 py-4">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground text-sm font-semibold">
-            H
-          </div>
-          <span className="font-semibold">Hivameet</span>
+      <aside className="hidden w-60 shrink-0 flex-col bg-sidebar text-sidebar-foreground sm:flex">
+        <div className="flex items-center gap-2.5 px-5 py-5">
+          <Image
+            src="/brand/hiva-icon-192.png"
+            alt=""
+            width={28}
+            height={28}
+            className="h-7 w-7"
+          />
+          <span className="font-heading text-[15px] font-semibold tracking-tight">
+            Hivameet
+          </span>
         </div>
+
         <SidebarNav />
-        <div className="mt-auto flex items-center gap-2 border-t p-3">
+
+        <Link
+          href="/billing"
+          className="mx-3 mt-4 flex items-center justify-between rounded-lg border border-sidebar-border bg-sidebar-accent/40 px-3 py-2.5 transition-colors hover:bg-sidebar-accent"
+        >
+          <span className="flex items-center gap-2 text-xs font-medium text-sidebar-foreground/70">
+            <Wallet className="h-3.5 w-3.5" />
+            Balance
+          </span>
+          <span className="text-sm font-semibold text-sidebar-primary">
+            {formatNgn(balanceKobo)}
+          </span>
+        </Link>
+
+        <div className="mt-auto flex items-center gap-2 border-t border-sidebar-border p-3">
           <Avatar className="h-8 w-8">
             <AvatarImage src={session.user.image ?? undefined} />
-            <AvatarFallback>{initials}</AvatarFallback>
+            <AvatarFallback className="bg-sidebar-accent text-sidebar-foreground">
+              {initials}
+            </AvatarFallback>
           </Avatar>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium">{session.user.name}</p>
-            <p className="truncate text-xs text-muted-foreground">{session.user.email}</p>
+            <p className="truncate text-xs text-sidebar-foreground/50">{session.user.email}</p>
           </div>
           <form
             action={async () => {
@@ -40,8 +70,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               await signOut({ redirectTo: "/login" });
             }}
           >
-            <Button variant="ghost" size="sm" type="submit">
-              Sign out
+            <Button
+              variant="ghost"
+              size="icon"
+              type="submit"
+              className="h-8 w-8 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            >
+              <LogOut className="h-4 w-4" />
             </Button>
           </form>
         </div>

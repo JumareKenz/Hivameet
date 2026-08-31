@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutGrid, Settings, Video } from "lucide-react";
+import { LayoutGrid, Settings, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const links = [
   { href: "/dashboard", label: "Meetings", icon: LayoutGrid },
+  { href: "/billing", label: "Credits", icon: Wallet },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -14,7 +15,7 @@ export function SidebarNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="flex flex-col gap-1 p-3">
+    <nav className="flex flex-col gap-0.5 px-3">
       {links.map(({ href, label, icon: Icon }) => {
         const active = pathname === href || pathname?.startsWith(href + "/");
         return (
@@ -22,10 +23,10 @@ export function SidebarNav() {
             key={href}
             href={href}
             className={cn(
-              "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+              "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
               active
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
+                : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
             )}
           >
             <Icon className="h-4 w-4" />
@@ -33,14 +34,6 @@ export function SidebarNav() {
           </Link>
         );
       })}
-      <div className="mt-2 border-t pt-2">
-        <span className="flex items-center gap-2 px-3 py-1 text-xs uppercase tracking-wide text-muted-foreground">
-          <Video className="h-3.5 w-3.5" /> Bot status
-        </span>
-        <p className="px-3 text-xs text-muted-foreground">
-          Not connected to a bot provider yet.
-        </p>
-      </div>
     </nav>
   );
 }

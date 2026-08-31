@@ -6,6 +6,7 @@ import { fetchGoogleEvents } from "./google";
 import { fetchMicrosoftEvents } from "./microsoft";
 import type { NormalizedCalendarEvent } from "./types";
 import { detectPlatform, dispatchBot, BotProviderNotConfiguredError } from "@/lib/bot-provider";
+import { hasEnoughCreditsToJoin } from "@/lib/billing/credits";
 
 // Mirrors the product spec's "T-1 minute" bot admission: dispatch once a
 // calendar event is due within the next minute. CATCH_UP_WINDOW_MS also
@@ -41,6 +42,9 @@ export async function syncUserCalendar(userId: string) {
     db.query.joinRules.findFirst({ where: eq(joinRules.userId, userId) }),
   ]);
   if (!user || !rules?.autoJoinEnabled || rules.mode === "manual_only") {
+    return { scanned: 0, dispatched: 0 };
+  }
+  if (!(await hasEnoughCreditsToJoin(userId))) {
     return { scanned: 0, dispatched: 0 };
   }
 

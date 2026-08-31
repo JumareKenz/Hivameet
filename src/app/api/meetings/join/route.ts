@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { db } from "@/db";
 import { meetings } from "@/db/schema";
 import { detectPlatform, dispatchBot, BotProviderNotConfiguredError } from "@/lib/bot-provider";
+import { hasEnoughCreditsToJoin } from "@/lib/billing/credits";
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -14,6 +15,13 @@ export async function POST(req: Request) {
   const { meetingUrl } = await req.json();
   if (!meetingUrl || typeof meetingUrl !== "string") {
     return NextResponse.json({ error: "meetingUrl is required" }, { status: 400 });
+  }
+
+  if (!(await hasEnoughCreditsToJoin(session.user.id))) {
+    return NextResponse.json(
+      { error: "Not enough credits to join a meeting. Top up in Billing." },
+      { status: 402 }
+    );
   }
 
   const platform = detectPlatform(meetingUrl);

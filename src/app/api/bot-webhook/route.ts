@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { meetings, meetingParticipants, transcriptSegments } from "@/db/schema";
 import { generateMeetingIntelligence } from "@/lib/intelligence";
+import { chargeForMeeting } from "@/lib/billing/credits";
 
 // Receives webhook events from Attendee (github.com/attendee-labs/attendee),
 // the self-hosted bot provider — see src/lib/bot-provider.ts. Payload shapes
@@ -63,10 +64,19 @@ export async function POST(req: Request) {
           .set({ status: "in_progress", startedAt: new Date() })
           .where(eq(meetings.id, meeting.id));
       } else if (eventType === "meeting_ended") {
+        const endedAt = new Date();
+        const durationSeconds = meeting.startedAt
+          ? Math.max(0, Math.round((endedAt.getTime() - meeting.startedAt.getTime()) / 1000))
+          : null;
         await db
           .update(meetings)
-          .set({ status: "processing", endedAt: new Date() })
+          .set({ status: "processing", endedAt, durationSeconds })
           .where(eq(meetings.id, meeting.id));
+        if (durationSeconds) {
+          await chargeForMeeting(meeting.id).catch((err) =>
+            console.error(`Failed to charge for meeting ${meeting.id}`, err)
+          );
+        }
       } else if (eventType === "post_processing_completed") {
         try {
           await generateMeetingIntelligence(meeting.id);

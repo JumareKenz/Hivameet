@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { db } from "./index";
 import {
   users,
@@ -8,7 +9,9 @@ import {
   insights,
   actionItems,
   reminders,
+  creditTransactions,
 } from "./schema";
+import { grantCredits } from "../lib/billing/credits";
 
 async function main() {
   console.log("Seeding database...");
@@ -33,6 +36,16 @@ async function main() {
       target: joinRules.userId,
       set: { mode: "hosted_by_me", autoJoinEnabled: true },
     });
+
+  const existingGrant = await db.query.creditTransactions.findFirst({
+    where: eq(creditTransactions.userId, user.id),
+  });
+  if (!existingGrant) {
+    await grantCredits(user.id, 10_000 * 100, "signup_bonus", "Demo account starting balance");
+  }
+
+  // Re-running the seed shouldn't pile up duplicate demo meetings.
+  await db.delete(meetings).where(eq(meetings.userId, user.id));
 
   const [meeting] = await db
     .insert(meetings)

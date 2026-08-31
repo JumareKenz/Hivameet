@@ -7,6 +7,8 @@ import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { accounts, sessions, users, verificationTokens } from "@/db/schema";
+import { grantCredits } from "@/lib/billing/credits";
+import { SIGNUP_BONUS_KOBO } from "@/lib/billing/pricing";
 
 const providers: Provider[] = [];
 
@@ -77,5 +79,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   pages: {
     signIn: "/login",
+  },
+  events: {
+    async createUser({ user }) {
+      if (!user.id) return;
+      await grantCredits(
+        user.id,
+        SIGNUP_BONUS_KOBO,
+        "signup_bonus",
+        "Welcome credit — 1 free hour"
+      );
+    },
   },
 });

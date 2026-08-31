@@ -2,17 +2,20 @@
 
 An AI meeting assistant that joins Google Meet, Zoom, and Microsoft Teams calls,
 transcribes and diarizes the discussion, and turns it into an executive summary,
-key insights, action items, and reminders.
+key insights, action items, and reminders. Part of the **Hiva** product family —
+branded with the shared Hiva identity (forest green `#04402c` / gold `#be8c43`,
+Inter typeface) and self-serve credit billing at ₦1,000/hour.
 
-Self-hosted — no Vercel required.
+Self-hosted — no Vercel required. Live at **https://meet.hiva.chat**.
 
 ## Stack
 
-- **Next.js 16** (App Router) + React 19 + Tailwind 4 + shadcn/ui
+- **Next.js 16** (App Router) + React 19 + Tailwind 4 + shadcn/ui, themed with the Hiva brand palette (`src/app/globals.css`)
 - **Postgres** via Docker Compose, **Drizzle ORM**
 - **Auth.js** (Google / Microsoft calendar OAuth, plus a dev-only demo login)
 - **AI SDK** (`ai` + `@ai-sdk/anthropic`) for meeting intelligence extraction and "Ask AI about this meeting"
 - Meeting-bot orchestration abstracted behind `src/lib/bot-provider.ts`, talking to a self-hosted **[Attendee](https://github.com/attendee-labs/attendee)** instance (open source, joins Zoom/Meet/Teams) — swap providers there if needed
+- Self-serve credit billing (`src/lib/billing/`) — ₦1,000/hour, metered by the minute
 
 ## Getting started
 
@@ -107,6 +110,55 @@ environment, so this has been verified for correctness against the Calendar
 v3 / Graph API docs and by exercising the "no calendar connected" path
 end-to-end — not against a live calendar with a meeting actually starting.
 
+## Branding
+
+Assets and colors are sourced from the canonical Hiva design system (verified
+against `services/ai/librechat/client/src/style.css` and the super_admin
+frontend's `tailwind.config.js` on this box, not invented):
+
+- Logo/icon/favicon set copied into `public/brand/` from `/opt/hiva/services/ai/librechat/client/public/assets/`
+- Brand ramp defined in `src/app/globals.css`'s `@theme inline` block: `brand-*` (forest green, `#04402c` primary) and `gold-*` (`#be8c43` accent)
+- Light mode primary = brand green, dark mode primary = gold, sidebar is a permanent dark-green brand rail in both — matching the convention in Hiva's other products
+- Font is Inter (`next/font/google`), matching every other Hiva frontend
+
+## Production deployment (meet.hiva.chat)
+
+Runs as a systemd service, reverse-proxied by the same nginx already serving
+the rest of `hiva.chat`:
+
+- **`/etc/systemd/system/hivameet.service`** — `next start -p 3200`, `NODE_ENV=production`, `Restart=always`, enabled on boot. Logs: `journalctl -u hivameet -f`
+- **`/etc/nginx/sites-available/meet.hiva.chat.conf`** — Cloudflare Flexible pattern (plain HTTP origin on port 80, CF terminates TLS), same as `super-admin.hiva.chat.conf`. `proxy_buffering off` so the Ask-AI SSE stream isn't held back.
+- **`.env.production.local`** — overrides `AUTH_URL`/`APP_BASE_URL` to `https://meet.hiva.chat` for the production instance only; everything else (secrets, `DATABASE_URL`) still comes from `.env.local`
+- DNS for `meet.hiva.chat` was already provisioned on Cloudflare (proxied) before this deploy — no DNS changes were needed, only the origin-side nginx config
+
+To deploy a change: `npm run build && systemctl restart hivameet`.
+
+**Still needed before it's actually usable in production**: real
+`AUTH_GOOGLE_ID`/`AUTH_MICROSOFT_ENTRA_ID_ID` OAuth credentials (with
+`https://meet.hiva.chat/api/auth/callback/{google,microsoft-entra-id}`
+registered as the redirect URI), `ANTHROPIC_API_KEY`, and a running Attendee
+instance — none are configured yet, and the dev-only demo login is correctly
+disabled in production, so nobody can sign in until at least one OAuth
+provider is set.
+
+## Self-serve credits
+
+₦1,000 buys one hour of meeting time (`src/lib/billing/pricing.ts`), charged
+by the minute when a meeting actually completes (`chargeForMeeting`, called
+from the bot webhook's `meeting_ended` event). New accounts get a free
+1-hour signup bonus (`auth.ts`'s `events.createUser`). Auto-join and manual
+"Join a meeting" both refuse to dispatch the bot below a 5-minute balance
+floor.
+
+The `/billing` page and `POST /api/billing/checkout` are fully wired for the
+self-serve flow — balance, package selection, transaction history — **except
+the actual payment charge**. No payment gateway is connected yet; checkout
+currently returns a clear "not configured" error instead of silently
+pretending to charge. Wire a real gateway (Paystack is the standard choice
+for NGN) into `src/app/api/billing/checkout/route.ts`, and only grant
+credits from that gateway's payment-confirmation webhook — never directly
+from the checkout request.
+
 ## Project layout
 
 - `src/app/(app)/` — authenticated app shell (dashboard, meeting detail, settings)
@@ -122,3 +174,5 @@ end-to-end — not against a live calendar with a meeting actually starting.
 
 - Export destinations (Slack, Notion, Asana, Google Docs, Email) are stubbed in the UI
 - The Attendee webhook payload/event handling is written against its documented shape but hasn't been exercised against a live Attendee instance yet
+- Payment gateway for buying credits (see Self-serve credits above)
+- No real OAuth/Anthropic/Attendee credentials are configured in production yet (see Production deployment above)

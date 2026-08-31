@@ -24,6 +24,8 @@ export const users = pgTable("user", {
   image: text("image"),
   botDisplayName: text("bot_display_name").default("Hivameet Notetaker"),
   timezone: text("timezone").default("UTC"),
+  // Stored in kobo (1 NGN = 100 kobo) to avoid floating-point drift on charges.
+  creditBalanceKobo: integer("credit_balance_kobo").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -240,14 +242,46 @@ export const exportLogs = pgTable("export_logs", {
   metadata: jsonb("metadata"),
 });
 
+// --- Billing / self-serve credits ------------------------------------------
+
+export const creditTransactionTypeEnum = pgEnum("credit_transaction_type", [
+  "signup_bonus",
+  "purchase",
+  "meeting_charge",
+  "refund",
+]);
+
+export const creditTransactions = pgTable("credit_transactions", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  type: creditTransactionTypeEnum("type").notNull(),
+  // Positive = credited to the user, negative = debited. Kobo.
+  amountKobo: integer("amount_kobo").notNull(),
+  balanceAfterKobo: integer("balance_after_kobo").notNull(),
+  meetingId: text("meeting_id").references(() => meetings.id, { onDelete: "set null" }),
+  description: text("description").notNull(),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 // --- Relations -------------------------------------------------------------
 
 export const usersRelations = relations(users, ({ many, one }) => ({
   meetings: many(meetings),
+  creditTransactions: many(creditTransactions),
   joinRules: one(joinRules, {
     fields: [users.id],
     references: [joinRules.userId],
   }),
+}));
+
+export const creditTransactionsRelations = relations(creditTransactions, ({ one }) => ({
+  user: one(users, { fields: [creditTransactions.userId], references: [users.id] }),
+  meeting: one(meetings, { fields: [creditTransactions.meetingId], references: [meetings.id] }),
 }));
 
 export const meetingsRelations = relations(meetings, ({ one, many }) => ({

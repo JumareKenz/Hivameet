@@ -8,6 +8,7 @@ import {
   actionItems,
   reminders,
   joinRules,
+  creditTransactions,
 } from "@/db/schema";
 
 export async function getMeetingsForUser(userId: string) {
@@ -62,6 +63,14 @@ export async function getMeetingDetail(userId: string, meetingId: string) {
     actionItems: tasks,
     reminders: meetingReminders,
   };
+}
+
+export async function getCreditTransactions(userId: string, limit = 25) {
+  return db.query.creditTransactions.findMany({
+    where: eq(creditTransactions.userId, userId),
+    orderBy: [desc(creditTransactions.createdAt)],
+    limit,
+  });
 }
 
 export async function getJoinRules(userId: string) {
