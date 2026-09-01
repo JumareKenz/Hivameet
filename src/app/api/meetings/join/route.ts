@@ -1,10 +1,18 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
+import { format } from "date-fns";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { meetings } from "@/db/schema";
 import { detectPlatform, dispatchBot, BotProviderNotConfiguredError } from "@/lib/bot-provider";
 import { hasEnoughCreditsToJoin } from "@/lib/billing/credits";
+
+const platformLabels: Record<ReturnType<typeof detectPlatform>, string> = {
+  google_meet: "Google Meet",
+  zoom: "Zoom",
+  ms_teams: "Teams",
+  unknown: "Meeting",
+};
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -12,7 +20,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { meetingUrl } = await req.json();
+  const { meetingUrl, title } = await req.json();
   if (!meetingUrl || typeof meetingUrl !== "string") {
     return NextResponse.json({ error: "meetingUrl is required" }, { status: 400 });
   }
@@ -26,12 +34,16 @@ export async function POST(req: Request) {
 
   const platform = detectPlatform(meetingUrl);
   const baseUrl = process.env.APP_BASE_URL ?? new URL(req.url).origin;
+  const meetingTitle =
+    typeof title === "string" && title.trim()
+      ? title.trim()
+      : `${platformLabels[platform]} call — ${format(new Date(), "MMM d, yyyy")}`;
 
   const [meeting] = await db
     .insert(meetings)
     .values({
       userId: session.user.id,
-      title: "Ad-hoc meeting",
+      title: meetingTitle,
       platform,
       meetingUrl,
       status: "awaiting_admission",

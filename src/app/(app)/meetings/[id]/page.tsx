@@ -49,7 +49,7 @@ export default async function MeetingDetailPage({
             )}
           </div>
         </div>
-        <ExportMenu />
+        <ExportMenu meetingId={meeting.id} />
       </header>
 
       <div className="grid flex-1 grid-cols-1 overflow-hidden lg:grid-cols-2">

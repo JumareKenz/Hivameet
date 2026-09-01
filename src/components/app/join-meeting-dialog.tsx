@@ -20,6 +20,7 @@ import { toast } from "sonner";
 export function JoinMeetingDialog() {
   const [open, setOpen] = useState(false);
   const [url, setUrl] = useState("");
+  const [title, setTitle] = useState("");
   const [pending, startTransition] = useTransition();
   const router = useRouter();
 
@@ -28,7 +29,7 @@ export function JoinMeetingDialog() {
       const res = await fetch("/api/meetings/join", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ meetingUrl: url }),
+        body: JSON.stringify({ meetingUrl: url, title }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -38,6 +39,7 @@ export function JoinMeetingDialog() {
       toast.success("Bot is on its way to the meeting");
       setOpen(false);
       setUrl("");
+      setTitle("");
       router.push(`/meetings/${data.meetingId}`);
       router.refresh();
     });
@@ -61,14 +63,27 @@ export function JoinMeetingDialog() {
             within about a minute.
           </DialogDescription>
         </DialogHeader>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="meeting-url">Meeting link</Label>
-          <Input
-            id="meeting-url"
-            placeholder="https://meet.google.com/abc-defg-hij"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-          />
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="meeting-url">Meeting link</Label>
+            <Input
+              id="meeting-url"
+              placeholder="https://meet.google.com/abc-defg-hij"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="meeting-title">
+              Meeting name <span className="text-muted-foreground font-normal">(optional)</span>
+            </Label>
+            <Input
+              id="meeting-title"
+              placeholder="Weekly Product Sync"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </div>
         </div>
         <DialogFooter>
           <Button onClick={handleJoin} disabled={!url || pending}>

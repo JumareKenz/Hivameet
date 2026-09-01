@@ -1,18 +1,19 @@
 "use client";
 
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, FileDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 
 const destinations = ["Slack", "Notion", "Asana", "Google Docs", "Email"];
 
-export function ExportMenu() {
+export function ExportMenu({ meetingId }: { meetingId: string }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -23,6 +24,15 @@ export function ExportMenu() {
         }
       />
       <DropdownMenuContent align="end">
+        <DropdownMenuItem
+          onClick={() => {
+            window.location.href = `/api/meetings/${meetingId}/export/pdf`;
+          }}
+        >
+          <FileDown className="h-4 w-4" />
+          Download PDF
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         {destinations.map((d) => (
           <DropdownMenuItem
             key={d}
