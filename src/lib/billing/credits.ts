@@ -52,7 +52,7 @@ async function applyCreditDelta(
 export function grantCredits(
   userId: string,
   amountKobo: number,
-  type: "signup_bonus" | "purchase" | "refund",
+  type: "signup_bonus" | "purchase" | "refund" | "admin_grant",
   description: string,
   metadata?: unknown
 ) {

@@ -249,6 +249,7 @@ export const creditTransactionTypeEnum = pgEnum("credit_transaction_type", [
   "purchase",
   "meeting_charge",
   "refund",
+  "admin_grant",
 ]);
 
 export const creditTransactions = pgTable("credit_transactions", {

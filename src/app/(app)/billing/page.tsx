@@ -14,6 +14,7 @@ const typeMeta = {
   purchase: { label: "Purchase", icon: ArrowUpRight, tone: "text-brand-500" },
   meeting_charge: { label: "Meeting", icon: ArrowDownRight, tone: "text-muted-foreground" },
   refund: { label: "Refund", icon: ArrowUpRight, tone: "text-brand-500" },
+  admin_grant: { label: "Credit adjustment", icon: Gift, tone: "text-brand-500" },
 } as const;
 
 export default async function BillingPage() {
