@@ -8,6 +8,7 @@ import { ActionItemRow } from "@/components/app/action-item-row";
 import { TranscriptPanel } from "@/components/app/transcript-panel";
 import { AskAiPanel } from "@/components/app/ask-ai-panel";
 import { ExportMenu } from "@/components/app/export-menu";
+import { DeleteMeetingButton } from "@/components/app/delete-meeting-button";
 import { Users, Clock, BellRing, AlertTriangle } from "lucide-react";
 
 export default async function MeetingDetailPage({
@@ -49,7 +50,14 @@ export default async function MeetingDetailPage({
             )}
           </div>
         </div>
-        <ExportMenu meetingId={meeting.id} />
+        <div className="flex items-center gap-2">
+          <ExportMenu meetingId={meeting.id} />
+          <DeleteMeetingButton
+            meetingId={meeting.id}
+            meetingTitle={meeting.title}
+            redirectTo="/dashboard"
+          />
+        </div>
       </header>
 
       {meeting.status === "failed" && meeting.failureReason && (

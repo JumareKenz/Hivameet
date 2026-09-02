@@ -8,6 +8,7 @@ import { MIN_BALANCE_TO_JOIN_KOBO } from "@/lib/billing/pricing";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { JoinMeetingDialog } from "@/components/app/join-meeting-dialog";
+import { DeleteMeetingButton } from "@/components/app/delete-meeting-button";
 import { Users, Clock, Video, AlertTriangle } from "lucide-react";
 
 const statusVariant: Record<string, { label: string; className: string }> = {
@@ -111,6 +112,7 @@ export default async function DashboardPage() {
                           </p>
                         )}
                       </div>
+                      <DeleteMeetingButton meetingId={m.id} meetingTitle={m.title} />
                     </CardContent>
                   </Card>
                 </Link>

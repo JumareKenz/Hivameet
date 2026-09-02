@@ -34,7 +34,7 @@ interface DispatchBotResult {
 
 export function detectPlatform(url: string): "google_meet" | "zoom" | "ms_teams" | "unknown" {
   if (/meet\.google\.com/.test(url)) return "google_meet";
-  if (/zoom\.us/.test(url)) return "zoom";
+  if (/zoom\.(us|com)/.test(url)) return "zoom";
   if (/teams\.(microsoft|live)\.com/.test(url)) return "ms_teams";
   return "unknown";
 }
