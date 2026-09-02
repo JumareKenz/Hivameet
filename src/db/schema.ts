@@ -136,6 +136,7 @@ export const meetings = pgTable(
     participantCount: integer("participant_count"),
     audioUrl: text("audio_url"),
     executiveSummary: text("executive_summary"),
+    failureReason: text("failure_reason"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [

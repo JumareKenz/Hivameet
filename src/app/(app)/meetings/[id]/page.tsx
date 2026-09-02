@@ -8,7 +8,7 @@ import { ActionItemRow } from "@/components/app/action-item-row";
 import { TranscriptPanel } from "@/components/app/transcript-panel";
 import { AskAiPanel } from "@/components/app/ask-ai-panel";
 import { ExportMenu } from "@/components/app/export-menu";
-import { Users, Clock, BellRing } from "lucide-react";
+import { Users, Clock, BellRing, AlertTriangle } from "lucide-react";
 
 export default async function MeetingDetailPage({
   params,
@@ -51,6 +51,13 @@ export default async function MeetingDetailPage({
         </div>
         <ExportMenu meetingId={meeting.id} />
       </header>
+
+      {meeting.status === "failed" && meeting.failureReason && (
+        <div className="flex items-center gap-2 border-b bg-destructive/5 px-6 py-2.5 text-sm text-destructive">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>{meeting.failureReason}</span>
+        </div>
+      )}
 
       <div className="grid flex-1 grid-cols-1 overflow-hidden lg:grid-cols-2">
         <div className="flex flex-col overflow-y-auto border-r p-6">

@@ -105,6 +105,11 @@ export default async function DashboardPage() {
                             {m.executiveSummary}
                           </p>
                         )}
+                        {m.status === "failed" && m.failureReason && (
+                          <p className="mt-2 line-clamp-1 text-sm text-destructive">
+                            {m.failureReason}
+                          </p>
+                        )}
                       </div>
                     </CardContent>
                   </Card>

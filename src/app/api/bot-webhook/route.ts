@@ -17,6 +17,36 @@ interface AttendeeWebhookPayload {
   data: Record<string, unknown>;
 }
 
+// From Attendee's BotEventSubTypes (bots/models.py) — translated to
+// something a user can actually act on instead of a bare "Failed" badge.
+const FAILURE_REASONS: Record<string, string> = {
+  could_not_join_meeting_not_started_waiting_for_host:
+    "The meeting hadn't started yet — the bot gave up waiting for the host.",
+  could_not_join_meeting_zoom_authorization_failed:
+    "Zoom authorization failed — check the Zoom OAuth app credentials in Attendee's settings.",
+  could_not_join_meeting_zoom_meeting_status_failed: "Couldn't confirm the Zoom meeting was active.",
+  could_not_join_meeting_unpublished_zoom_app: "The Zoom app used to join isn't published for external meetings.",
+  could_not_join_meeting_zoom_sdk_internal_error: "Zoom's SDK reported an internal error while joining.",
+  could_not_join_meeting_request_to_join_denied: "The host denied the bot's request to join.",
+  could_not_join_meeting_meeting_not_found: "That meeting link doesn't point to a real, joinable meeting.",
+  could_not_join_meeting_waiting_room_timeout_exceeded:
+    "Nobody admitted the bot from the waiting room in time.",
+  could_not_join_meeting_login_required: "That meeting requires a logged-in account to join.",
+  could_not_join_meeting_bot_login_attempt_failed: "The bot's login attempt failed.",
+  fatal_error_process_terminated: "The bot's process was terminated unexpectedly.",
+  fatal_error_rtmp_connection_failed: "The recording connection failed.",
+  fatal_error_ui_element_not_found: "The meeting UI changed in a way the bot couldn't handle.",
+  fatal_error_heartbeat_timeout: "The bot stopped responding and timed out.",
+  fatal_error_bot_not_launched: "The bot failed to launch.",
+};
+
+function humanizeFailureReason(eventSubType: unknown): string {
+  if (typeof eventSubType === "string" && FAILURE_REASONS[eventSubType]) {
+    return FAILURE_REASONS[eventSubType];
+  }
+  return "The bot couldn't complete this meeting for an unknown reason.";
+}
+
 /**
  * Reproduces Python's `json.dumps(payload, sort_keys=True, ensure_ascii=False,
  * separators=(",", ":"))` — the exact canonical form Attendee signs
@@ -123,13 +153,19 @@ export async function POST(req: Request) {
           console.error("Failed to generate meeting intelligence", err);
           await db
             .update(meetings)
-            .set({ status: "failed" })
+            .set({
+              status: "failed",
+              failureReason: "The recording finished, but generating a summary failed.",
+            })
             .where(eq(meetings.id, meeting.id));
         }
       } else if (eventType === "fatal_error" || eventType === "could_not_join_meeting") {
         await db
           .update(meetings)
-          .set({ status: "failed" })
+          .set({
+            status: "failed",
+            failureReason: humanizeFailureReason(payload.data.event_sub_type),
+          })
           .where(eq(meetings.id, meeting.id));
       }
       break;

@@ -67,7 +67,14 @@ export async function POST(req: Request) {
     // Keep the meeting record so the failed attempt stays visible on the
     // dashboard instead of vanishing, but don't leave it stuck showing
     // "awaiting admission" forever when no bot was actually dispatched.
-    await db.update(meetings).set({ status: "failed" }).where(eq(meetings.id, meeting.id));
+    const failureReason =
+      err instanceof BotProviderNotConfiguredError
+        ? err.message
+        : "The bot couldn't be dispatched to this meeting.";
+    await db
+      .update(meetings)
+      .set({ status: "failed", failureReason })
+      .where(eq(meetings.id, meeting.id));
 
     if (err instanceof BotProviderNotConfiguredError) {
       return NextResponse.json(

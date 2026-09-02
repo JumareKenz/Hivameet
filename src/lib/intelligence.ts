@@ -63,7 +63,20 @@ export async function generateMeetingIntelligence(meetingId: string) {
   const participantsById = new Map(participants.map((p) => [p.id, p]));
 
   if (segments.length === 0) {
-    throw new Error(`Meeting ${meetingId} has no transcript to analyze yet`);
+    // The bot joined and recorded, but nothing was transcribed — most often
+    // because meeting captions were never enabled, not a real failure. Mark
+    // it completed with an honest summary rather than "failed" with no
+    // explanation: the call itself succeeded, there's just no content to
+    // extract insights from.
+    await db
+      .update(meetings)
+      .set({
+        status: "completed",
+        executiveSummary:
+          "No speech was transcribed for this meeting. This usually means live captions weren't enabled during the call — Hivameet currently relies on them for Google Meet and Microsoft Teams.",
+      })
+      .where(eq(meetings.id, meetingId));
+    return null;
   }
 
   const transcript = segments
