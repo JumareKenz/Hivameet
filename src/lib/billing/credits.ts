@@ -26,9 +26,48 @@ async function applyCreditDelta(
   amountKobo: number,
   type: (typeof creditTransactions.$inferInsert)["type"],
   description: string,
-  opts?: { meetingId?: string; metadata?: unknown }
+  opts?: { meetingId?: string; metadata?: unknown; externalReference?: string }
 ) {
   return db.transaction(async (tx) => {
+    // Guard first: if this external reference (a Paystack transaction
+    // reference) was already recorded, the unique index on
+    // externalReference makes this insert a no-op and we bail out before
+    // touching the balance — this is what actually prevents a double
+    // credit under concurrent duplicate webhook deliveries, not just the
+    // caller's own pre-check.
+    if (opts?.externalReference) {
+      const [inserted] = await tx
+        .insert(creditTransactions)
+        .values({
+          userId,
+          type,
+          amountKobo,
+          balanceAfterKobo: 0, // placeholder, corrected below once we know the real balance
+          meetingId: opts?.meetingId,
+          description,
+          metadata: opts?.metadata,
+          externalReference: opts.externalReference,
+        })
+        .onConflictDoNothing({ target: creditTransactions.externalReference })
+        .returning({ id: creditTransactions.id });
+
+      if (!inserted) {
+        return (await tx.query.users.findFirst({ where: eq(users.id, userId), columns: { creditBalanceKobo: true } }))
+          ?.creditBalanceKobo ?? 0;
+      }
+
+      const [updated] = await tx
+        .update(users)
+        .set({ creditBalanceKobo: sql`${users.creditBalanceKobo} + ${amountKobo}` })
+        .where(eq(users.id, userId))
+        .returning({ balance: users.creditBalanceKobo });
+      await tx
+        .update(creditTransactions)
+        .set({ balanceAfterKobo: updated.balance })
+        .where(eq(creditTransactions.id, inserted.id));
+      return updated.balance;
+    }
+
     const [updated] = await tx
       .update(users)
       .set({ creditBalanceKobo: sql`${users.creditBalanceKobo} + ${amountKobo}` })
@@ -54,9 +93,10 @@ export function grantCredits(
   amountKobo: number,
   type: "signup_bonus" | "purchase" | "refund" | "admin_grant",
   description: string,
-  metadata?: unknown
+  metadata?: unknown,
+  externalReference?: string
 ) {
-  return applyCreditDelta(userId, Math.abs(amountKobo), type, description, { metadata });
+  return applyCreditDelta(userId, Math.abs(amountKobo), type, description, { metadata, externalReference });
 }
 
 /** Charges the user for a completed meeting based on its actual duration. */

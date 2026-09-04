@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
-import { auth } from "@/auth";
+import { auth, signIn } from "@/auth";
 import { getJoinRules } from "@/lib/data";
 import { db } from "@/db";
 import { accounts, joinRules, users } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -38,6 +38,27 @@ export default async function SettingsPage() {
   const connectedProviders = new Set(connectedAccounts.map((a) => a.provider));
   const hasCalendarConnection =
     connectedProviders.has("google") || connectedProviders.has("microsoft-entra-id");
+  const zoomCreationConfigured = Boolean(
+    process.env.ZOOM_S2S_ACCOUNT_ID && process.env.ZOOM_S2S_CLIENT_ID && process.env.ZOOM_S2S_CLIENT_SECRET
+  );
+
+  // Auth.js only writes fresh tokens/scope to the accounts table the first
+  // time a provider is linked — signing in again with an account that's
+  // already linked is a no-op on the stored row (verified against
+  // @auth/core's handle-login.js: the userByAccount-exists branch just
+  // creates a session, it never calls linkAccount again). So when we widen
+  // the requested OAuth scope, anyone who connected before that change is
+  // stuck on their old scope forever unless the link is broken first. This
+  // action does that: drop the stored account, then invoke signIn while
+  // already authenticated — that hits the *other* branch in handle-login.js
+  // ("user is already signed in ... link the accounts safely"), which does
+  // call linkAccount, writing the newly-consented scope and tokens.
+  async function reconnectProvider(formData: FormData) {
+    "use server";
+    const provider = formData.get("provider") as "google" | "microsoft-entra-id";
+    await db.delete(accounts).where(and(eq(accounts.userId, userId), eq(accounts.provider, provider)));
+    await signIn(provider, { redirectTo: "/settings" });
+  }
 
   async function updateJoinRules(formData: FormData) {
     "use server";
@@ -70,27 +91,68 @@ export default async function SettingsPage() {
       <div className="flex flex-col gap-6 px-6 py-6 max-w-xl">
         <Card>
           <CardHeader>
-            <CardTitle>Calendar connections</CardTitle>
+            <CardTitle>Connections</CardTitle>
             <CardDescription>
-              Auto-join scans these calendars every minute for meetings that are about to start.
+              Calendars power auto-join and let Hivameet create real Google Meet, Teams, and Zoom
+              meetings on your behalf.
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={connectedProviders.has("google") ? "default" : "secondary"}>
-                Google {connectedProviders.has("google") ? "connected" : "not connected"}
-              </Badge>
-              <Badge variant={connectedProviders.has("microsoft-entra-id") ? "default" : "secondary"}>
-                Microsoft {connectedProviders.has("microsoft-entra-id") ? "connected" : "not connected"}
-              </Badge>
+          <CardContent className="flex flex-col divide-y">
+            <div className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0">
+              <div className="flex items-center gap-2">
+                <Badge variant={connectedProviders.has("google") ? "default" : "secondary"}>
+                  Google {connectedProviders.has("google") ? "connected" : "not connected"}
+                </Badge>
+                <span className="text-sm text-muted-foreground">Calendar + Google Meet</span>
+              </div>
+              <form action={reconnectProvider}>
+                <input type="hidden" name="provider" value="google" />
+                <Button type="submit" size="sm" variant="outline" disabled={!process.env.AUTH_GOOGLE_ID}>
+                  {connectedProviders.has("google") ? "Reconnect" : "Connect"}
+                </Button>
+              </form>
             </div>
-            {!hasCalendarConnection && (
-              <p className="text-sm text-muted-foreground">
-                Sign out and back in with Google or Microsoft to connect a calendar — auto-join
-                won&apos;t do anything until then.
+            <div className="flex flex-wrap items-center justify-between gap-3 py-3">
+              <div className="flex items-center gap-2">
+                <Badge variant={connectedProviders.has("microsoft-entra-id") ? "default" : "secondary"}>
+                  Microsoft {connectedProviders.has("microsoft-entra-id") ? "connected" : "not connected"}
+                </Badge>
+                <span className="text-sm text-muted-foreground">Calendar + Teams</span>
+              </div>
+              <form action={reconnectProvider}>
+                <input type="hidden" name="provider" value="microsoft-entra-id" />
+                <Button
+                  type="submit"
+                  size="sm"
+                  variant="outline"
+                  disabled={!process.env.AUTH_MICROSOFT_ENTRA_ID_ID}
+                >
+                  {connectedProviders.has("microsoft-entra-id") ? "Reconnect" : "Connect"}
+                </Button>
+              </form>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 py-3 last:pb-0">
+              <div className="flex items-center gap-2">
+                <Badge variant={zoomCreationConfigured ? "default" : "secondary"}>
+                  Zoom {zoomCreationConfigured ? "available" : "not configured"}
+                </Badge>
+                <span className="text-sm text-muted-foreground">Meeting creation only</span>
+              </div>
+            </div>
+            {!zoomCreationConfigured && (
+              <p className="pt-3 text-sm text-muted-foreground">
+                Zoom meeting creation isn&apos;t connected to any personal account — it uses a single
+                Server-to-Server app configured by whoever runs this Hivameet instance, shared by every
+                user. Ask them to set it up if you need to create Zoom meetings from Hivameet.
               </p>
             )}
-            <div>
+            {!hasCalendarConnection && (
+              <p className="pt-3 text-sm text-muted-foreground">
+                Connect Google or Microsoft to let auto-join scan your calendar for meetings that are
+                about to start.
+              </p>
+            )}
+            <div className="pt-3">
               <SyncCalendarButton />
             </div>
           </CardContent>

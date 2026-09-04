@@ -8,6 +8,7 @@ import { MIN_BALANCE_TO_JOIN_KOBO } from "@/lib/billing/pricing";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { JoinMeetingDialog } from "@/components/app/join-meeting-dialog";
+import { CreateMeetingDialog } from "@/components/app/create-meeting-dialog";
 import { DeleteMeetingButton } from "@/components/app/delete-meeting-button";
 import { Users, Clock, Video, AlertTriangle } from "lucide-react";
 
@@ -39,7 +40,10 @@ export default async function DashboardPage() {
             Everything your notetaker has captured.
           </p>
         </div>
-        <JoinMeetingDialog />
+        <div className="flex items-center gap-2">
+          <JoinMeetingDialog />
+          <CreateMeetingDialog />
+        </div>
       </header>
 
       {lowBalance && (

@@ -36,7 +36,7 @@ async function refreshMicrosoftToken(refreshToken: string): Promise<RefreshedTok
       client_secret: process.env.AUTH_MICROSOFT_ENTRA_ID_SECRET!,
       refresh_token: refreshToken,
       grant_type: "refresh_token",
-      scope: "openid email profile offline_access Calendars.Read",
+      scope: "openid email profile offline_access Calendars.ReadWrite",
     }),
   });
   if (!res.ok) {

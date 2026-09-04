@@ -162,7 +162,10 @@ interface MeetingReportProps {
     executiveSummary: string | null;
   };
   keyInsights: { id: string; content: string }[];
-  recommendations: { id: string; content: string }[];
+  recommendations: { text: string; rationale: string | null }[];
+  decisions: { decision: string; context: string; owner: string | null; implications: string | null }[];
+  risks: { description: string; severity: "low" | "medium" | "high"; wasExplicit: boolean }[];
+  openQuestions: string[];
   actionItems: {
     id: string;
     text: string;
@@ -188,6 +191,9 @@ export function MeetingReport({
   meeting,
   keyInsights,
   recommendations,
+  decisions,
+  risks,
+  openQuestions,
   actionItems,
   reminders,
   participants,
@@ -263,13 +269,51 @@ export function MeetingReport({
             </View>
           )}
 
+          {decisions.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Decisions Made</Text>
+              {decisions.map((d, i) => (
+                <View key={i} style={{ marginBottom: 8 }}>
+                  <Text style={{ fontSize: 10.5, fontWeight: 600 }}>{d.decision}</Text>
+                  <Text style={{ fontSize: 9.5, color: COLORS.muted, marginTop: 1 }}>{d.context}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {risks.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Risks &amp; Concerns</Text>
+              {risks.map((r, i) => (
+                <View key={i} style={styles.bulletRow}>
+                  <View style={styles.bulletDot} />
+                  <Text style={styles.bulletText}>
+                    [{r.severity}] {r.description}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {openQuestions.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Open Questions</Text>
+              {openQuestions.map((q, i) => (
+                <View key={i} style={styles.bulletRow}>
+                  <View style={styles.bulletDot} />
+                  <Text style={styles.bulletText}>{q}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
           {recommendations.length > 0 && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Recommendations</Text>
-              {recommendations.map((r) => (
-                <View key={r.id} style={styles.bulletRow}>
+              <Text style={styles.sectionTitle}>AI Recommendations</Text>
+              {recommendations.map((r, i) => (
+                <View key={i} style={styles.bulletRow}>
                   <View style={styles.bulletDot} />
-                  <Text style={styles.bulletText}>{r.content}</Text>
+                  <Text style={styles.bulletText}>{r.text}</Text>
                 </View>
               ))}
             </View>

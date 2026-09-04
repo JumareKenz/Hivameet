@@ -19,9 +19,12 @@ if (process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET) {
         params: {
           access_type: "offline",
           prompt: "consent",
-          // read-only calendar access to detect meeting links for auto-join
-          scope:
-            "openid email profile https://www.googleapis.com/auth/calendar.readonly",
+          // Full (read/write) calendar scope: read-only was enough to detect
+          // meeting links for auto-join, but creating a Google Meet event
+          // from inside Hivameet requires write access too. Anyone who
+          // connected under the old read-only scope needs to reconnect —
+          // detected via GoogleInsufficientScopeError, see meeting-providers/google.ts.
+          scope: "openid email profile https://www.googleapis.com/auth/calendar",
         },
       },
     })
@@ -32,7 +35,9 @@ if (process.env.AUTH_MICROSOFT_ENTRA_ID_ID && process.env.AUTH_MICROSOFT_ENTRA_I
   providers.push(
     MicrosoftEntraID({
       authorization: {
-        params: { scope: "openid email profile offline_access Calendars.Read" },
+        // ReadWrite (not just Read): creating a Teams meeting from inside
+        // Hivameet needs to write a calendar event via Graph.
+        params: { scope: "openid email profile offline_access Calendars.ReadWrite" },
       },
     })
   );

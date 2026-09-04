@@ -1,4 +1,5 @@
 import { syncAllUsersCalendars } from "./sync";
+import { dispatchDueScheduledMeetings } from "@/lib/meetings/scheduled-dispatch";
 
 const INTERVAL_MS = 60_000;
 const INITIAL_DELAY_MS = 5_000;
@@ -30,6 +31,15 @@ export function startCalendarSyncScheduler() {
       }
     } catch (err) {
       console.error("[calendar-sync] tick failed", err);
+    }
+
+    try {
+      const scheduled = await dispatchDueScheduledMeetings();
+      if (scheduled.dispatched > 0) {
+        console.log(`[scheduled-dispatch] dispatched ${scheduled.dispatched} Hivameet-created meeting(s)`);
+      }
+    } catch (err) {
+      console.error("[scheduled-dispatch] tick failed", err);
     } finally {
       running = false;
     }

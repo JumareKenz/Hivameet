@@ -3,6 +3,7 @@ import { db } from "@/db";
 import {
   meetings,
   meetingParticipants,
+  meetingInvitees,
   transcriptSegments,
   insights,
   actionItems,
@@ -24,7 +25,7 @@ export async function getMeetingDetail(userId: string, meetingId: string) {
   });
   if (!meeting) return null;
 
-  const [segments, participants, meetingInsights, tasks, meetingReminders] =
+  const [segments, participants, invitees, meetingInsights, tasks, meetingReminders] =
     await Promise.all([
       db.query.transcriptSegments.findMany({
         where: eq(transcriptSegments.meetingId, meetingId),
@@ -32,6 +33,9 @@ export async function getMeetingDetail(userId: string, meetingId: string) {
       }),
       db.query.meetingParticipants.findMany({
         where: eq(meetingParticipants.meetingId, meetingId),
+      }),
+      db.query.meetingInvitees.findMany({
+        where: eq(meetingInvitees.meetingId, meetingId),
       }),
       db.query.insights.findMany({
         where: eq(insights.meetingId, meetingId),
@@ -46,10 +50,20 @@ export async function getMeetingDetail(userId: string, meetingId: string) {
     ]);
 
   const participantsById = new Map(participants.map((p) => [p.id, p]));
+  const report = meeting.intelligenceReport;
+
+  // Recommendations used to live only in the insights table (type =
+  // "recommendation"). New meetings store them in intelligenceReport
+  // instead (with an optional rationale) — read both so meetings generated
+  // before this change still render theirs.
+  const legacyRecommendations = meetingInsights
+    .filter((i) => i.type === "recommendation")
+    .map((i) => ({ text: i.content, rationale: null as string | null }));
 
   return {
     meeting,
     participants,
+    invitees,
     segments: segments.map((s) => ({
       ...s,
       speaker: s.participantId
@@ -59,9 +73,15 @@ export async function getMeetingDetail(userId: string, meetingId: string) {
         : "Unknown speaker",
     })),
     keyInsights: meetingInsights.filter((i) => i.type === "key_insight"),
-    recommendations: meetingInsights.filter((i) => i.type === "recommendation"),
     actionItems: tasks,
     reminders: meetingReminders,
+    overview: report?.overview ?? null,
+    discussionPoints: report?.discussionPoints ?? [],
+    decisions: report?.decisions ?? [],
+    recommendations: report?.recommendations ?? legacyRecommendations,
+    risks: report?.risks ?? [],
+    openQuestions: report?.openQuestions ?? [],
+    topics: report?.topics ?? [],
   };
 }
 

@@ -11,6 +11,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import type { AdapterAccountType } from "next-auth/adapters";
+import type { IntelligenceReportJson } from "@/lib/intelligence/schema";
 
 // --- Auth.js required tables ---------------------------------------------
 
@@ -115,6 +116,15 @@ export const joinRules = pgTable("join_rules", {
 
 // --- Meetings ------------------------------------------------------------
 
+export const meetingCreationSourceEnum = pgEnum("meeting_creation_source", [
+  // Discovered by polling a connected external calendar (existing flow).
+  "calendar_sync",
+  // Pasted a live meeting link into "Join a meeting" (existing flow).
+  "ad_hoc_join",
+  // Created from inside Hivameet via a MeetingProvider (new).
+  "hivameet_created",
+]);
+
 export const meetings = pgTable(
   "meetings",
   {
@@ -125,17 +135,46 @@ export const meetings = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
+    description: text("description"),
+    agenda: text("agenda"),
     platform: meetingPlatformEnum("platform").notNull().default("unknown"),
     meetingUrl: text("meeting_url"),
+    // Set only for meetings Hivameet itself created (see MeetingProvider) —
+    // the host-only join link, e.g. a Zoom start_url. Never shown to invitees.
+    hostUrl: text("host_url"),
+    creationSource: meetingCreationSourceEnum("creation_source")
+      .notNull()
+      .default("ad_hoc_join"),
+    // The provider-side id for a Hivameet-created meeting (Google Calendar
+    // event id / Graph event id / Zoom meeting id) — distinct from
+    // calendarEventId, which identifies an externally-discovered event this
+    // meeting was synced *from*.
+    providerMeetingId: text("provider_meeting_id"),
     calendarEventId: text("calendar_event_id"),
     botProviderSessionId: text("bot_provider_session_id"),
     status: meetingStatusEnum("status").notNull().default("scheduled"),
+    timezone: text("timezone"),
+    // The organizer's intended schedule — set at creation time, independent
+    // of startedAt/endedAt below, which reflect when the bot actually
+    // recorded. A Hivameet-created meeting has both; a synced/ad-hoc one
+    // typically only gets startedAt/endedAt once the bot actually joins.
+    scheduledStartAt: timestamp("scheduled_start_at"),
+    scheduledEndAt: timestamp("scheduled_end_at"),
+    // Whether Hivameet should auto-dispatch the bot at scheduledStartAt for
+    // a meeting created inside Hivameet (separate from the global join_rules
+    // used for calendar-sync discovery).
+    autoRecord: boolean("auto_record").notNull().default(true),
     startedAt: timestamp("started_at"),
     endedAt: timestamp("ended_at"),
     durationSeconds: integer("duration_seconds"),
     participantCount: integer("participant_count"),
     audioUrl: text("audio_url"),
     executiveSummary: text("executive_summary"),
+    // Structured report content that doesn't need its own interactive/editable
+    // table (see actionItems and insights for the parts that do): overview,
+    // discussionPoints, decisions, risks, openQuestions, topics. Validated
+    // against meetingIntelligenceSchema (src/lib/intelligence.ts) before save.
+    intelligenceReport: jsonb("intelligence_report").$type<IntelligenceReportJson>(),
     failureReason: text("failure_reason"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
@@ -146,6 +185,21 @@ export const meetings = pgTable(
     uniqueIndex("meetings_user_calendar_event_idx").on(table.userId, table.calendarEventId),
   ]
 );
+
+// Invitees added at creation time (before the meeting happens) — distinct
+// from meetingParticipants below, which are transcript speakers identified
+// *after* the bot records (a real attendee may never speak, and a
+// transcript speaker may not have been an invited attendee at all).
+export const meetingInvitees = pgTable("meeting_invitees", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  meetingId: text("meeting_id")
+    .notNull()
+    .references(() => meetings.id, { onDelete: "cascade" }),
+  email: text("email").notNull(),
+  name: text("name"),
+});
 
 export const meetingParticipants = pgTable("meeting_participants", {
   id: text("id")
@@ -186,6 +240,12 @@ export const insights = pgTable("insights", {
   sortOrder: integer("sort_order").notNull().default(0),
 });
 
+export const actionItemPriorityEnum = pgEnum("action_item_priority", [
+  "low",
+  "medium",
+  "high",
+]);
+
 export const actionItems = pgTable("action_items", {
   id: text("id")
     .primaryKey()
@@ -194,9 +254,15 @@ export const actionItems = pgTable("action_items", {
     .notNull()
     .references(() => meetings.id, { onDelete: "cascade" }),
   text: text("text").notNull(),
+  // Null/unset means the AI found no owner stated — the UI renders that as
+  // "Owner not specified" rather than inventing one.
   assignee: text("assignee"),
   dueDate: timestamp("due_date", { mode: "date" }),
+  priority: actionItemPriorityEnum("priority").notNull().default("medium"),
   completed: boolean("completed").notNull().default(false),
+  // True once a user has edited this item — lets the UI show "edited"
+  // instead of implying the AI extracted exactly this wording/owner/date.
+  userEdited: boolean("user_edited").notNull().default(false),
   sourceSegmentId: text("source_segment_id").references(
     () => transcriptSegments.id,
     { onDelete: "set null" }
@@ -267,8 +333,17 @@ export const creditTransactions = pgTable("credit_transactions", {
   meetingId: text("meeting_id").references(() => meetings.id, { onDelete: "set null" }),
   description: text("description").notNull(),
   metadata: jsonb("metadata"),
+  // Set only for purchases (the Paystack transaction reference). A DB-level
+  // unique constraint — not just an app-level "does a row already exist"
+  // check — is what actually makes duplicate webhook deliveries safe: two
+  // concurrent requests racing the app-level check would both pass it, but
+  // only one can win the unique index, so the retry gets guaranteed a
+  // conflict and returns "already processed" instead of double-crediting.
+  externalReference: text("external_reference"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => [
+  uniqueIndex("credit_transactions_external_reference_idx").on(table.externalReference),
+]);
 
 // --- Relations -------------------------------------------------------------
 
@@ -288,6 +363,7 @@ export const creditTransactionsRelations = relations(creditTransactions, ({ one 
 
 export const meetingsRelations = relations(meetings, ({ one, many }) => ({
   user: one(users, { fields: [meetings.userId], references: [users.id] }),
+  invitees: many(meetingInvitees),
   participants: many(meetingParticipants),
   transcriptSegments: many(transcriptSegments),
   insights: many(insights),
@@ -295,6 +371,10 @@ export const meetingsRelations = relations(meetings, ({ one, many }) => ({
   reminders: many(reminders),
   chatMessages: many(chatMessages),
   exportLogs: many(exportLogs),
+}));
+
+export const meetingInviteesRelations = relations(meetingInvitees, ({ one }) => ({
+  meeting: one(meetings, { fields: [meetingInvitees.meetingId], references: [meetings.id] }),
 }));
 
 export const transcriptSegmentsRelations = relations(

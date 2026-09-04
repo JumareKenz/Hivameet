@@ -49,7 +49,7 @@ export function JoinMeetingDialog() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
         render={
-          <Button size="sm">
+          <Button size="sm" variant="outline">
             <Plus className="h-4 w-4" />
             Join a meeting
           </Button>

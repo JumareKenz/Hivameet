@@ -1,8 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
-import { sql } from "drizzle-orm";
-import { db } from "@/db";
-import { creditTransactions } from "@/db/schema";
 import { grantCredits } from "@/lib/billing/credits";
 
 // Verification: Paystack signs the raw request body with HMAC-SHA512 using
@@ -42,18 +39,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  // Idempotency: Paystack can retry webhook delivery, and a network hiccup
-  // could otherwise double-credit the same payment.
-  const alreadyProcessed = await db.query.creditTransactions.findFirst({
-    where: sql`${creditTransactions.metadata} ->> 'paystackReference' = ${reference}`,
-  });
-  if (alreadyProcessed) {
-    return NextResponse.json({ ok: true });
-  }
-
-  await grantCredits(userId, ngn * 100, "purchase", `Paystack top-up — ₦${ngn.toLocaleString("en-NG")}`, {
-    paystackReference: reference,
-  });
+  // Idempotency: Paystack can retry webhook delivery (and this endpoint could
+  // in principle be hit concurrently for the same reference). grantCredits
+  // enforces this atomically via a DB unique constraint on
+  // externalReference, not just this pre-check, so a race between two
+  // concurrent deliveries can't double-credit — see src/lib/billing/credits.ts.
+  await grantCredits(
+    userId,
+    ngn * 100,
+    "purchase",
+    `Paystack top-up — ₦${ngn.toLocaleString("en-NG")}`,
+    { paystackReference: reference },
+    reference
+  );
 
   return NextResponse.json({ ok: true });
 }
