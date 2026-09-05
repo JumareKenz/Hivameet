@@ -49,7 +49,9 @@ async function consolidate(chunks: ChunkExtraction[], meetingTitle: string): Pro
     prompt:
       "Here are the partial extractions, in chronological order, as a JSON array:\n\n" +
       combined +
-      "\n\nProduce the final, consolidated meeting report from these.",
+      "\n\nProduce the final, consolidated meeting report from these. Your output is a single JSON " +
+      "object matching the required report schema — not an array, and not one of the input extractions " +
+      "verbatim.",
     // The final report can be larger than any single chunk's extraction
     // once everything is merged — give it more room than the per-chunk pass.
     maxOutputTokens: 16384,
@@ -97,6 +99,7 @@ export async function generateMeetingIntelligence(meetingId: string) {
       .update(meetings)
       .set({
         status: "completed",
+        failureReason: null,
         executiveSummary:
           "No speech was transcribed for this meeting. This usually means live captions weren't enabled during the call — Hivameet currently relies on them for Google Meet and Microsoft Teams.",
       })
@@ -133,6 +136,7 @@ async function persistReport(meetingId: string, report: MeetingIntelligence) {
     .update(meetings)
     .set({
       status: "completed",
+      failureReason: null,
       executiveSummary: report.executiveSummary,
       intelligenceReport: {
         overview: report.overview,

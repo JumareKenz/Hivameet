@@ -146,7 +146,13 @@ export async function POST(req: Request) {
             console.error(`Failed to charge for meeting ${meeting.id}`, err)
           );
         }
-      } else if (eventType === "post_processing_completed") {
+      } else if (eventType === "post_processing_completed" && meeting.status !== "completed") {
+        // Attendee can fire this trigger more than once for the same
+        // meeting (its recording/transcript pipeline has multiple
+        // post-processing stages) — skip once we've already produced a
+        // report so a duplicate delivery doesn't burn another AI call and
+        // isn't just extra chances to hit a transient schema-validation
+        // failure on a meeting that already succeeded.
         try {
           await generateMeetingIntelligence(meeting.id);
         } catch (err) {

@@ -41,12 +41,28 @@ export function getChatModel(): LanguageModel {
   return first.model;
 }
 
+// A model asked for a complex, deeply-nested schema occasionally produces
+// JSON that's substantively fine but violates one strict-mode rule (a null
+// where an empty array belonged, a nullable field omitted instead of set to
+// null) — sampling noise, not a persistent prompt/schema mismatch. Verified
+// against three real production failures on the same meeting's consolidate
+// step, each a *different* schema violation, which is the signature of
+// per-attempt noise rather than a bug that retrying would just repeat. Only
+// worth retrying schema-validation failures specifically, not e.g. auth or
+// rate-limit errors that a same-provider retry can't fix any better than
+// falling through to the next provider would.
+const RETRIES_PER_PROVIDER = 2;
+
+function isSchemaValidationError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /does not match the expected schema|jsonschema/i.test(message);
+}
+
 /**
- * Generates structured output validated against `schema`, trying each
- * configured provider in order and falling back to the next on failure
- * (API error, rate limit, or the model's output failing schema validation).
- * Logs which provider/model was tried and why it failed — never the prompt
- * content or any secret.
+ * Generates structured output validated against `schema`, retrying each
+ * configured provider on schema-validation failures before falling back to
+ * the next provider in the chain. Logs which provider/model was tried and
+ * why it failed — never the prompt content or any secret.
  */
 export async function generateStructuredWithFallback<T extends z.ZodTypeAny>({
   schema,
@@ -72,26 +88,34 @@ export async function generateStructuredWithFallback<T extends z.ZodTypeAny>({
 
   let lastError: unknown;
   for (const entry of chain) {
-    try {
-      const { output } = await generateText({
-        model: entry.model,
-        output: Output.object({ schema }),
-        system,
-        prompt,
-        maxOutputTokens,
-      });
-      // Cast bridges a generic-inference gap between our T and Output.object's
-      // own inferred OBJECT type param — runtime validation against `schema`
-      // already happened inside generateText, this isn't skipping that.
-      return output as z.infer<T>;
-    } catch (err) {
-      lastError = err;
-      console.error(
-        `[ai] ${entry.name} failed for structured generation, ${
-          entry === chain[chain.length - 1] ? "no more fallbacks" : "trying next provider"
-        }:`,
-        err instanceof Error ? err.message : err
-      );
+    for (let attempt = 1; attempt <= RETRIES_PER_PROVIDER; attempt++) {
+      try {
+        const { output } = await generateText({
+          model: entry.model,
+          output: Output.object({ schema }),
+          system,
+          prompt,
+          maxOutputTokens,
+        });
+        // Cast bridges a generic-inference gap between our T and Output.object's
+        // own inferred OBJECT type param — runtime validation against `schema`
+        // already happened inside generateText, this isn't skipping that.
+        return output as z.infer<T>;
+      } catch (err) {
+        lastError = err;
+        const willRetrySameProvider = attempt < RETRIES_PER_PROVIDER && isSchemaValidationError(err);
+        console.error(
+          `[ai] ${entry.name} failed for structured generation (attempt ${attempt}/${RETRIES_PER_PROVIDER}), ${
+            willRetrySameProvider
+              ? "retrying same provider"
+              : entry === chain[chain.length - 1]
+                ? "no more fallbacks"
+                : "trying next provider"
+          }:`,
+          err instanceof Error ? err.message : err
+        );
+        if (!willRetrySameProvider) break;
+      }
     }
   }
   throw lastError instanceof Error
