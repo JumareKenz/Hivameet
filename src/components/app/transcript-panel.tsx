@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Play, Pause } from "lucide-react";
+import { Play, Pause, ChevronDown, ChevronRight, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -25,8 +25,10 @@ export function TranscriptPanel({
   const audioRef = useRef<HTMLAudioElement>(null);
   const [currentMs, setCurrentMs] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [revealed, setRevealed] = useState(false);
 
   function seekTo(ms: number) {
+    setRevealed(true);
     if (!audioRef.current) {
       setCurrentMs(ms);
       return;
@@ -75,7 +77,24 @@ export function TranscriptPanel({
           </div>
         )}
       </div>
-      <ScrollArea className="flex-1">
+      <button
+        onClick={() => setRevealed((r) => !r)}
+        disabled={segments.length === 0}
+        className="flex items-center gap-2 border-b p-4 text-left text-sm font-medium disabled:cursor-default disabled:opacity-60"
+      >
+        {revealed ? (
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+        )}
+        <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+        {segments.length === 0
+          ? "No transcript yet"
+          : revealed
+            ? "Hide transcript"
+            : `Show transcript (${segments.length} lines)`}
+      </button>
+      <ScrollArea className={cn("flex-1", !revealed && "hidden")}>
         <div className="flex flex-col gap-4 p-4">
           {segments.length === 0 ? (
             <p className="text-sm text-muted-foreground">

@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutGrid, Settings, Wallet } from "lucide-react";
+import { CalendarDays, LayoutGrid, Settings, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const links = [
   { href: "/dashboard", label: "Meetings", icon: LayoutGrid },
+  { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/billing", label: "Credits", icon: Wallet },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
