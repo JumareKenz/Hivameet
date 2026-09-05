@@ -131,7 +131,7 @@ export default async function MeetingDetailPage({
         </div>
       )}
 
-      <div className="grid flex-1 grid-cols-1 overflow-hidden lg:grid-cols-2">
+      <div className="grid flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="flex flex-col overflow-y-auto border-r">
           <Tabs defaultValue="summary" className="flex flex-1 flex-col">
             <TabsList className="mx-6 mt-4 w-fit">
@@ -393,9 +393,10 @@ export default async function MeetingDetailPage({
             durationSeconds={meeting.durationSeconds}
             segments={segments}
           />
-          <AskAiPanel meetingId={meeting.id} />
         </div>
       </div>
+
+      <AskAiPanel meetingId={meeting.id} />
     </div>
   );
 }
